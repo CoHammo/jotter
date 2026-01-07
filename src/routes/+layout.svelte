@@ -1,6 +1,4 @@
-<script>
-	import { onMount } from "svelte";
-	// import { open } from "@tauri-apps/plugin-opener";
+<script lang="ts">
 	import "../app.css";
 
 	let { children } = $props();
@@ -10,7 +8,7 @@
 	class="bg-zinc-900 text-white h-12 justify-center items-center flex gap-4"
 >
 	<a href="/">Marked</a>
-	<a href="/tiptap">TipTap</a>
+	<a href="/loro">Loro</a>
 </header>
 
 <main class="main-content">{@render children()}</main>

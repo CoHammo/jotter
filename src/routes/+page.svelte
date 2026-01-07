@@ -2,7 +2,8 @@
 	import { Marked } from "marked";
 	import xTables from "@fsegurai/marked-extended-tables";
 	import linkify from "marked-linkify-it";
-	import { warn, debug, trace, info, error } from "@tauri-apps/plugin-log";
+	import * as rust from "$lib/rust.svelte.ts";
+	import { untrack } from "svelte";
 
 	const md = new Marked();
 
@@ -17,63 +18,122 @@
 	// md.use({ hooks }, xTables(), linkify({}, {}));
 
 	const renderer = {
-		heading({ tokens, depth }) {
-			const text = this.parser.parseInline(tokens);
-			const escapedText = text.toLowerCase().replace(/[^\w]+/g, "-");
-
-			return `<h${depth}><span class="hhash">${"#".repeat(depth)}</span> ${text}</h${depth}>`;
-		},
+		// heading({ tokens, depth }) {
+		// 	const text = this.parser.parseInline(tokens);
+		// 	const escapedText = text.toLowerCase().replace(/[^\w]+/g, "-");
+		// 	return `<h${depth}><span class="hhash">${"#".repeat(depth)}</span> ${text}</h${depth}>`;
+		// },
 	};
 
-	md.use({ renderer }, xTables(), linkify({}, {}));
+	md.use({ renderer, async: false }, xTables(), linkify({}, {}));
 
-	let rawmark = $state(`# Jotter!\nyoutube.com`);
-	let rendermark: HTMLDivElement | undefined = $state();
-	let caretPos = $state(0);
+	let renderTime = $state(0);
+	let markdown = $state("# Jotter!");
+	let tokens = $state(md.lexer(markdown));
+	let rendermark = $state("");
+	$effect(() => {
+		// let start = performance.now();
+		// rust.parse_markdown(markdown).then((result) => {
+		// 	untrack(() => {
+		// 		rendermark = result;
+		// 		let end = performance.now();
+		// 		renderTime = end - start;
+		// 	});
+		// });
 
-	function updateCaretPos() {
-		const selection = window.getSelection();
-		if (selection && selection.rangeCount > 0 && rendermark) {
-			const range = selection.getRangeAt(0);
-			const preCaretRange = range.cloneRange();
-			preCaretRange.selectNodeContents(rendermark);
-			preCaretRange.setEnd(range.endContainer, range.endOffset);
-			caretPos = preCaretRange.toString().length;
+		let start = performance.now();
+		let result = md.lexer(markdown);
+		untrack(() => {
+			tokens = result;
+			rendermark = md.parser(result);
+			let end = performance.now();
+			renderTime = end - start;
+		});
+	});
+	let markdownBox: HTMLTextAreaElement | undefined = $state();
+	let renderBox: HTMLDivElement | undefined = $state();
+	let caret = $state({ pos: 0, range: document.createRange() });
+
+	function updateCaret() {
+		const sel = window.getSelection();
+		if (sel && sel?.type == "Caret" && sel.rangeCount > 0 && renderBox) {
+			let range = sel.getRangeAt(0);
+			let offset = range.cloneRange();
+			offset.selectNodeContents(renderBox);
+			offset.setEnd(range.endContainer, range.endOffset);
+			caret = { pos: offset.toString().length, range: offset };
+		}
+	}
+
+	function editMarkdown(e: Event) {
+		if (renderBox) {
+			let oldCaret = caret;
+			markdown = renderBox.innerText.slice(0, -1);
+			const sel = window.getSelection();
+			sel?.collapse(renderBox, 2);
 		}
 	}
 </script>
 
-<div class="flex flex-row h-full pt-2">
+<div
+	class="grid grid-cols-2 grid-rows-[1fr_1fr_0.1fr] gap-0.5 h-full bg-black *:bg-white *:p-3"
+>
 	<textarea
-		class="flex-1 resize-none outline-none px-3"
+		bind:this={markdownBox}
+		class="resize-none outline-none"
 		name="rawmark"
 		id="rawmark"
-		bind:value={rawmark}
-	></textarea>
-	<div class="w-0.5 h-full bg-black"></div>
+		bind:value={markdown}
+	>
+	</textarea>
 	<div
-		bind:this={rendermark}
+		bind:this={renderBox}
+		bind:innerHTML={rendermark}
 		role="textbox"
 		tabindex="0"
 		aria-multiline="true"
 		contenteditable
-		onbeforeinput={(e) => e.preventDefault()}
-		onkeyup={updateCaretPos}
-		onclick={updateCaretPos}
-		class="h-full flex-1 p-2 my-markdown px-3 outline-none"
-	>
-		{@html md.parse(rawmark)}
+		oninput={editMarkdown}
+		onkeydown={updateCaret}
+		onkeyup={updateCaret}
+		onclick={updateCaret}
+		class="my-markdown outline-none overflow-auto"
+	></div>
+	<textarea>
+		{JSON.stringify(tokens, null, 2)}
+	</textarea>
+	<div class="overflow-auto">
+		{rendermark}
 	</div>
-</div>
-<div class="flex flex-row items-center bg-gray-200 gap-2 m-2">
-	<button
-		class="h-8 hover:cursor-pointer hover:bg-amber-400 bg-amber-300 transition-all rounded font-bold px-3"
-		onclick={() => info(rendermark?.innerText ?? "")}>Log MD</button
+	<div
+		class="flex h-10 flex-row col-span-full items-center bg-gray-200 gap-1"
 	>
-	<div class="font-mono text-sm">CPos: {caretPos},</div>
-	<div class="font-mono text-sm">MDLen: {rawmark.length},</div>
-	<div class="font-mono text-sm">
-		RendLen: {rendermark?.innerText?.length ?? "0"}
+		<button
+			class="h-8 hover:cursor-pointer hover:bg-amber-400 bg-amber-300 transition-all rounded font-bold px-3"
+			onclick={async () => {
+				markdown = await rust.load_file();
+			}}>Load MD</button
+		>
+		<div class="font-mono text-sm">CPos: {caret.pos},</div>
+		<div class="font-mono text-sm">MDLen: {markdown.length},</div>
+		<div class="font-mono text-sm">
+			RendLen: {renderBox?.innerText?.length ?? "0"},
+		</div>
+		<div class="font-mono text-sm">TLen: {tokens.length}</div>
+		<div class="font-mono text-sm ml-auto">
+			RTime: {renderTime.toFixed(0)}ms
+		</div>
+		<button
+			class="h-8 hover:cursor-pointer hover:bg-amber-400 bg-amber-300 transition-all rounded font-bold px-3"
+			onclick={async () => {
+				let tokens = await rust.load_file();
+				let start = performance.now();
+				let edit = await rust.edit(tokens, 243581);
+				// await rust.save_markdown(text);
+				let end = performance.now();
+				console.log(`${(end - start).toFixed(2)}ms`);
+			}}>Load MD</button
+		>
 	</div>
 </div>
 
