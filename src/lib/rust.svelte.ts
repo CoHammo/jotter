@@ -5,14 +5,11 @@ export const text = "# Jotter!\nyoutube.com";
 
 // const decoder = new TextDecoder('utf-8');
 
-export async function load_file(): Promise<TokensList> {
+export async function load_file(): Promise<string> {
 	let text = (await invoke("read_file", {
 		path: "/mnt/ssd/CodeProjects/jotter/src/routes/initmark.md",
 	})) as string;
-
-	let result = marked.lexer(text.repeat(30));
-	console.log(`Tokens: ${result.length}`);
-	return result;
+	return text;
 }
 
 export async function edit(tokens: TokensList, index: number): Promise<string> {

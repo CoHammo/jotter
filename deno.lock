@@ -27,6 +27,7 @@
     "npm:svelte-check@^4.3.5": "4.3.5_svelte@5.46.1__acorn@8.15.0_typescript@5.6.3",
     "npm:svelte@^5.46.1": "5.46.1_acorn@8.15.0",
     "npm:tailwindcss@^4.1.18": "4.1.18",
+    "npm:tarsec@~0.1.1": "0.1.1",
     "npm:tiptap-markdown@0.9": "0.9.0_@tiptap+core@3.15.0__@tiptap+pm@3.15.0___prosemirror-model@1.25.4___prosemirror-state@1.4.4___prosemirror-view@1.41.4_@tiptap+pm@3.15.0__prosemirror-model@1.25.4__prosemirror-state@1.4.4__prosemirror-view@1.41.4",
     "npm:typescript@~5.6.3": "5.6.3",
     "npm:vite-plugin-top-level-await@^1.6.0": "1.6.0_vite@6.4.1__picomatch@4.0.3",
@@ -1437,6 +1438,9 @@
     "tapable@2.3.0": {
       "integrity": "sha512-g9ljZiwki/LfxmQADO3dEY1CbpmXT5Hm2fJ+QaGKwSXUylMybePR7/67YW7jOrrvjEgL1Fmz5kzyAjWVWLlucg=="
     },
+    "tarsec@0.1.1": {
+      "integrity": "sha512-Mi29JH15nShnwNq7sA1alHB2Z8FO17uedfTCACFUW7qCNau6RkD7u1FXK+Z8XXcXB/aC/EqTll5ntPfAcYW5JQ=="
+    },
     "tinyglobby@0.2.15_picomatch@4.0.3": {
       "integrity": "sha512-j2Zq4NyQYG5XMST4cbs02Ak8iJUdxRM0XI5QyxXuZOzKOINmWurp3smXu3y5wDcJrptwpSjgXHzIQxR0omXljQ==",
       "dependencies": [
@@ -1548,6 +1552,7 @@
         "npm:svelte-check@^4.3.5",
         "npm:svelte@^5.46.1",
         "npm:tailwindcss@^4.1.18",
+        "npm:tarsec@~0.1.1",
         "npm:tiptap-markdown@0.9",
         "npm:typescript@~5.6.3",
         "npm:vite-plugin-top-level-await@^1.6.0",

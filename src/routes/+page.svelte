@@ -4,6 +4,7 @@
 	import linkify from "marked-linkify-it";
 	import * as rust from "$lib/rust.svelte.ts";
 	import { untrack } from "svelte";
+	import { MarkDoc } from "$lib/markedit";
 
 	const md = new Marked();
 
@@ -18,37 +19,38 @@
 	// md.use({ hooks }, xTables(), linkify({}, {}));
 
 	const renderer = {
-		// heading({ tokens, depth }) {
-		// 	const text = this.parser.parseInline(tokens);
-		// 	const escapedText = text.toLowerCase().replace(/[^\w]+/g, "-");
-		// 	return `<h${depth}><span class="hhash">${"#".repeat(depth)}</span> ${text}</h${depth}>`;
-		// },
+		heading({ tokens, depth }) {
+			const text = this.parser.parseInline(tokens);
+			const escapedText = text.toLowerCase().replace(/[^\w]+/g, "-");
+			return `<h${depth}><span class="hhash">${"#".repeat(depth)}</span> ${text}</h${depth}>`;
+		},
 	};
 
 	md.use({ renderer, async: false }, xTables(), linkify({}, {}));
 
 	let renderTime = $state(0);
 	let markdown = $state("# Jotter!");
-	let tokens = $state(md.lexer(markdown));
+	let tokens = $state(new MarkDoc(""));
+	// let tokens = $state(md.lexer(markdown));
 	let rendermark = $state("");
 	$effect(() => {
-		// let start = performance.now();
-		// rust.parse_markdown(markdown).then((result) => {
-		// 	untrack(() => {
-		// 		rendermark = result;
-		// 		let end = performance.now();
-		// 		renderTime = end - start;
-		// 	});
-		// });
-
-		let start = performance.now();
-		let result = md.lexer(markdown);
+		let perfStart = performance.now();
+		let doc = new MarkDoc(markdown);
 		untrack(() => {
-			tokens = result;
-			rendermark = md.parser(result);
-			let end = performance.now();
-			renderTime = end - start;
+			tokens = doc;
+			rendermark = doc.render();
+			let perfEnd = performance.now();
+			renderTime = perfEnd - perfStart;
 		});
+
+		// let perfStart = performance.now();
+		// let result = md.lexer(markdown);
+		// untrack(() => {
+		// 	tokens = result;
+		// 	rendermark = md.parser(result);
+		// 	let perfEnd = performance.now();
+		// 	renderTime = perfEnd - perfStart;
+		// });
 	});
 	let markdownBox: HTMLTextAreaElement | undefined = $state();
 	let renderBox: HTMLDivElement | undefined = $state();

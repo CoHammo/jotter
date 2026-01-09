@@ -1,70 +1,43 @@
-const TokenType = {
-	root: "root",
-	heading: "heading",
-	list: "list",
-	paragraph: "paragraph",
-	codeBlock: "codeBlock",
-	fancyText: "fancyText",
-	boldItalic: "boldItalic",
-	italic: "italic",
-	bold: "bold",
-	codespan: "codespan",
-	text: "text",
-};
-
-const Reg = {
+const Regex = {
 	// blocks
-	heading: String.raw`(?:^(?<hashes>#{1,6})(?<value> .*)$|^(?<value>.+)\n(?<lines>=+|-+)$)`,
-	code: String.raw`^(?<fence>(?:\`|~){3})(?<lang>\w*)\s(?<value>[\s\S]*?)\k<fence>$`,
-	paragraph: String.raw`(?:\r?\n|^)(?![#>-]|\s*[*+-]|\s*\d+\.|\`{3,}|~{3,})(?<value>[\s\S]+?)(?=\n\s*\n|$)`,
+	heading: String.raw`(?:^(?<hashes>#{1,6} )(?<text>.*)|(?<text>.+)(?<lines>\n(?:=+|-+)))\n?`,
+	code: String.raw`(?:(?<!\\)(?<fence>(?:\`|~){3})(?!(?:[ \t\`~]*\k<fence>)|[\`~]+?)(?<lang>[^\s\`~]*)(?<text>[\s\S]*?)(?<!\\)\k<fence>)`,
+	// paragraph: String.raw`(?:\r?\n|^)(?![#>-]|\s*[*+-]|\s*\d+\.|\`{3,}|~{3,})(?<value>[\s\S]+?)(?=\n\s*\n|$)`,
 
 	// inlines
-	codespan: String.raw`(?:(?<!\\)(?<ticks>(?:\`){1,2})(?!\`)(?<value>.+?)(?<!\\)\k<ticks>)`,
-	boldItalic: String.raw`(?:(?<!\\)(?<marks>(?:\*|_){3})(?!\*)(?<value>.+?)(?<!\\)\k<marks>)`,
-	bold: String.raw`(?<!(?:(?:\*|_){1})(?!\s|\*).*?)(?:(?<!\\)(?<marks>(?:\*|_){2})(?!\s|\*)(?<value>.+?)(?<!\\)\k<marks>)`,
-	italic: String.raw`(?:(?<!\\)(?<marks>(?:\*|_){1})(?!\*)(?<value>.+?)(?<!\\)\k<marks>)`,
-	boldOrItalic: String.raw`(?:(?<!\\)(?<marks>(?:\*|_){1,2})(?!\*)(?<value>.+?)(?<!\\)\k<marks>)`,
+	codespan: String.raw`(?:(?<!\\)(?<ticks>(?:\`))(?![\s\`]*\k<ticks>)(?<text>.+?)(?<!\\)\k<ticks>)`,
+	// boldItalic: String.raw`(?:(?<!\\)(?<marks>(?:\*|_){3})(?!(?:[\s*_]+\k<marks>)|[*_]+?)(?<text>.+?)(?<!\\)\k<marks>)`,
+	// bold: String.raw`(?:(?<!\\)(?<marks>(?:\*|_){2})(?!(?:[\s*]+\k<marks>)|[*_]+?)(?<text>.+?)(?<!\\)\k<marks>)`,
+	// italic: String.raw`(?:(?<!\\)(?<marks>(?:\*|_))(?!(?:[\s*]+\k<marks>)|[*_]+?)(?<text>.+?)(?<!\\)\k<marks>)`,
+	marks: String.raw`(?<!\\)(?:(?:(?<!(^\s*)|[*_]+\s*)[*_]{1,3})|(?:(?<marks>[*_]{1,3})(?!\s*[*_]+|\s*$)))`,
 };
 
 class Token {
-	type: string;
-	start: number;
-	end: number;
-	raw: string;
 	static allBlockReg: RegExp;
 	static allInlineReg: RegExp;
-	static boldReg: RegExp;
-	static italicReg: RegExp;
-	static boldOrItalic: RegExp;
+	// static boldReg: RegExp;
+	// static italicReg: RegExp;
+
+	type: string = "token";
+	start: number;
+	end: number;
+	value: string;
 	tokens: Token[] = [];
 
 	get length() {
 		return this.end - this.start;
 	}
 
-	constructor(type: string, start: number, end: number, raw: string) {
-		this.type = type;
+	constructor(start: number, end: number, value: string) {
 		this.start = start;
 		this.end = end;
-		this.raw = raw;
-
-		Token.allBlockReg = new RegExp(
-			[Reg.heading, Reg.code, Reg.paragraph].join("|"),
-			"gm",
-		);
-		Token.allInlineReg = new RegExp(
-			[Reg.codespan, Reg.boldItalic].join("|"),
-			"gm",
-		);
-		Token.boldReg = new RegExp(Reg.bold, "gm");
-		Token.italicReg = new RegExp(Reg.italic, "gm");
-		Token.boldOrItalic = new RegExp(Reg.boldOrItalic, "gm");
+		this.value = value;
 	}
 
-	toHTML(): string {
+	render(): string {
 		let html = "";
 		for (const token of this.tokens) {
-			html += token.toHTML();
+			html += token.render();
 		}
 		return html;
 	}
@@ -73,564 +46,647 @@ class Token {
 		return true;
 	}
 
-	// 	_parseInline(regex: RegExp, text: string, start: number, end: number) {
-	// 		let previousTokenEnd = start;
-	// 		let matches = text.matchAll(Token.allInlineReg);
-	// 		for (const match of matches) {
-	// 			if (previousTokenEnd < match.index) {
-	// 				this.tokens.push(
-	// 					new TextToken(
-	// 						text.substring(previousTokenEnd, match.index),
-	// 						previousTokenEnd,
-	// 						match.index,
-	// 					),
-	// 				);
-	// 			}
+	_parseInline() {
+		let preTokenEnd = this.start;
+		let inlinePreTokenEnd = 0;
+		let matches = this.value.matchAll(Token.allInlineReg);
+		for (const match of matches) {
+			let { text, ticks, marks } = match.groups!;
 
-	// 			let { value, ticks, marks } = match.groups!;
-	// 			if (ticks) {
-	// 				this.tokens.push(new CodeSpanToken(match));
-	// 			} else if (marks) {
-	// 				if (marks.length == 3) {
-	// 					this.tokens.push(new BoldItalicToken());
-	// 				} else if (marks.length == 2) {
-	// 					this.tokens.push(new BoldToken());
-	// 				} else if (marks.length == 1) {
-	// 					this.tokens.push(new ItalicToken());
-	// 				} else {
-	// 					this.tokens.push(
-	// 						new TextToken(value, match.index, match.index + match[0].length),
-	// 					);
-	// 				}
-	// 			}
+			let start = this.start + match.index;
+			let end = start + match[0].length;
+			let inlineStart = match.index;
+			let inlineEnd = inlineStart + match[0].length;
+			let markedText = new MarkedText();
 
-	// 			previousTokenEnd = match.index + match[0].length;
-	// 		}
+			if (preTokenEnd < start) {
+				let token = new TextToken(
+					preTokenEnd,
+					start,
+					this.value.substring(inlinePreTokenEnd, inlineEnd),
+				);
+				if (markedText.marked) {
+					markedText.addText(token);
+				} else {
+					this.tokens.push(token);
+				}
+			}
 
-	// 		if (previousTokenEnd < end) {
-	// 			this.tokens.push(
-	// 				new TextToken(
-	// 					text.substring(previousTokenEnd, end),
-	// 					previousTokenEnd,
-	// 					end,
-	// 				),
-	// 			);
-	// 		}
-	// 	}
+			if (marks) {
+				markedText.addMark(new TextToken(start, start + marks.length, marks));
+				markedText.addText(
+					new TextToken(start + marks.length, end - marks.length, text),
+				);
+				markedText.addMark(new TextToken(end - marks.length, end, marks));
+			} else if (ticks) {
+				let token = new CodeSpan(start, end, ticks, text, match[0]);
+				if (markedText.marked) {
+					markedText.addText(token);
+				} else {
+					this.tokens.push(token);
+				}
+			}
+
+			preTokenEnd = end;
+			inlinePreTokenEnd = inlineEnd;
+		}
+
+		if (preTokenEnd < this.end || this.tokens.length == 0) {
+			this.tokens.push(
+				new TextToken(
+					preTokenEnd,
+					this.end,
+					this.value.substring(inlinePreTokenEnd, this.value.length),
+				),
+			);
+		}
+	}
 }
 
-class RootToken extends Token {
-	constructor(length: number, raw: string) {
-		super(TokenType.root, 0, length, raw);
+Token.allBlockReg = new RegExp([Regex.heading, Regex.code].join("|"), "gm");
+Token.allInlineReg = new RegExp([Regex.codespan, Regex.marks].join("|"), "gm");
+// Token.boldReg = new RegExp(Regex.bold, "gm");
+// Token.italicReg = new RegExp(Regex.italic, "gm");
+
+export class MarkDoc extends Token {
+	constructor(text: string) {
+		super(0, text.length, text);
+		this.type = "root";
 		this._parse();
 	}
 
 	_parse(): boolean {
-		let previousTokenEnd = 0;
-		let matches = this.raw.matchAll(Token.allBlockReg);
+		let preTokenEnd = 0;
+		let matches = this.value.matchAll(Token.allBlockReg);
+
 		for (const match of matches) {
-			if (previousTokenEnd < match.index) {
+			let { text, hashes, lines, fence, lang } = match.groups ?? {};
+			let start = match.index;
+			let end = match.index + match[0].length;
+
+			if (preTokenEnd < start) {
 				this.tokens.push(
-					new ParagraphToken(
-						previousTokenEnd,
-						match.index,
-						this.raw.substring(previousTokenEnd, match.index),
+					new Paragraph(
+						preTokenEnd,
+						start,
+						this.value.substring(preTokenEnd, start),
 					),
 				);
 			}
 
-			let { value, hashes, lines, fence, lang } = match.groups!;
-			let start = match.index;
-			let end = match.index + match[0].length;
 			if (hashes || lines) {
 				this.tokens.push(
-					new HeadingToken(start, end, value, hashes, lines, match[0]),
+					new Heading(start, end, hashes, text, lines, match[0]),
 				);
 			} else if (fence) {
 				this.tokens.push(
-					new CodeBlockToken(start, end, value, fence, lang, match[0]),
+					new CodeBlock(start, end, fence, lang, text, match[0]),
 				);
-			} else {
-				this.tokens.push(new ParagraphToken(start, end, value));
 			}
 
 			// console.log(match);
-			previousTokenEnd = match.index + match[0].length;
+			preTokenEnd = end;
 		}
 
-		if (previousTokenEnd == 0 || previousTokenEnd < this.end) {
+		if (preTokenEnd < this.end || this.tokens.length == 0) {
 			this.tokens.push(
-				new ParagraphToken(
-					previousTokenEnd,
+				new Paragraph(
+					preTokenEnd,
 					this.end,
-					this.raw.substring(previousTokenEnd, this.end),
+					this.value.substring(preTokenEnd, this.end),
 				),
 			);
 		}
+
 		return true;
 	}
 }
 
-class HeadingToken extends Token {
+class Heading extends Token {
 	depth: number;
-	hashes: string | undefined;
-	lines: string | undefined;
+	hashes: TextToken | undefined;
+	lines: TextToken | undefined;
 
 	constructor(
 		start: number,
 		end: number,
-		value: string,
 		hashes: string | undefined,
+		text: string,
 		lines: string | undefined,
-		raw: string,
+		value: string,
 	) {
-		super(TokenType.heading, start, end, raw);
-		if (this.hashes) {
-			this.depth = this.hashes.length;
-		} else if (this.lines) {
-			if (this.lines.at(0) == "=") this.depth = 1;
+		super(start, end, value);
+		this.type = "heading";
+		if (hashes) {
+			this.hashes = new TextToken(start, hashes.length - 1, hashes);
+			this.depth = hashes.length - 1;
+		} else if (lines) {
+			this.lines = new TextToken(end - lines.length, end, lines);
+			if (lines.at(0) == "=") this.depth = 1;
 			else this.depth = 2;
 		} else {
 			this.depth = 1;
 		}
 
-		this.tokens.push(
-			new TextToken(
-				value,
-				this.start + (hashes?.length ?? 0),
-				this.end - (lines?.length ?? 0),
-			),
-		);
+		this._parseInline();
+
+		// this.tokens.push(new TextToken(start, end, text));
 	}
 
-	toHTML(): string {
-		let content = super.toHTML();
-		if (this.hashes) {
-			return `<h${this.depth}>${this.hashes}${content}</h${this.depth}>`;
-		} else {
-			return `<h${this.depth}>${content}\n${this.lines}</h${this.depth}>`;
-		}
+	render(): string {
+		let html = super.render();
+		return `<h${this.depth}>${this.hashes?.value ?? ""}${html}${this.lines?.value ?? ""}</h${this.depth}>`;
 	}
 }
 
-class CodeBlockToken extends Token {
-	fence: string;
-	lang: string | undefined;
+class CodeBlock extends Token {
+	fenceStart: TextToken;
+	lang: TextToken | undefined;
+	fenceEnd: TextToken;
 
 	constructor(
 		start: number,
 		end: number,
-		value: string,
 		fence: string,
 		lang: string | undefined,
-		raw: string,
+		text: string,
+		value: string,
 	) {
-		super(TokenType.codeBlock, start, end, raw);
-		this.fence = fence;
-		this.lang = lang;
+		super(start, end, value);
+		this.type = "codeBlock";
 
-		this.tokens.push(
-			new TextToken(
-				value,
-				this.start + fence.length + (lang?.length ?? 0),
-				this.end - (fence?.length ?? 0),
-			),
-		);
+		this.fenceStart = new TextToken(start, start + fence.length, fence);
+		this.fenceEnd = new TextToken(end - fence.length, end, fence);
+		if (lang) {
+			this.lang = new TextToken(
+				start,
+				start + fence.length + lang.length,
+				lang,
+			);
+			this.tokens.push(
+				new TextToken(
+					start + fence.length + lang.length,
+					end - fence.length,
+					text,
+				),
+			);
+		} else {
+			this.tokens.push(
+				new TextToken(start + fence.length, end - fence.length, text),
+			);
+		}
 	}
 
-	toHTML(): string {
-		let content = super.toHTML();
-		return `<code>${this.fence}${this.lang}${content}${this.fence}<code>`;
+	render(): string {
+		let html = super.render();
+		if (this.lang) {
+			return `<code><span class="hidden">${this.fenceStart.value}</span><span class="code-lang">${this.lang.value}</span>${html}<span class="hidden">${this.fenceEnd.value}</span><code>`;
+		} else {
+			return `<code><span class="hidden">${this.fenceStart.value}</span>${html}<span class="hidden">${this.fenceEnd.value}</span><code>`;
+		}
 	}
 }
 
-class ParagraphToken extends Token {
+class Paragraph extends Token {
 	constructor(start: number, end: number, value: string) {
-		super(TokenType.paragraph, start, end, value);
-
-		this.tokens.push(new TextToken(value, this.start, this.end));
+		super(start, end, value);
+		this.type = "paragraph";
+		this._parseInline();
 	}
 
-	toHTML(): string {
-		let content = super.toHTML();
-		return `<p>${content}</p>`;
+	render(): string {
+		let html = super.render();
+		return `<p>${html}</p>`;
 	}
 }
 
-// class BoldItalicToken extends Token {
-// 	marks: string;
+class MarkedText {
+	types: { [key: number]: { marked: boolean; index: number } } = {
+		3: { marked: false, index: Number.POSITIVE_INFINITY },
+		2: { marked: false, index: Number.POSITIVE_INFINITY },
+		1: { marked: false, index: Number.POSITIVE_INFINITY },
+	};
+	tokens: Token[] = [];
 
-// 	constructor(match: RegExpExecArray) {
-// 		super(
-// 			TokenType.boldItalic,
-// 			match.index,
-// 			match.index + match[0].length,
-// 			match[0],
-// 		);
-// 		this.marks = "";
-// 		this.#parse(match);
-// 	}
+	get marked(): boolean {
+		return this.types[3].marked || this.types[2].marked || this.types[1].marked;
+	}
 
-// 	#parse(match?: RegExpExecArray) {
-// 		if (match) {
-// 			let { value, marks } = match.groups!;
-// 			this.marks = marks;
-// 			this.raw = match[0];
-// 			let textStart = match.index + marks.length;
-// 		}
-// 	}
+	get nextMark(): number | undefined {
+		let i3 = this.types[3].index;
+		let i2 = this.types[2].index;
+		let i1 = this.types[1].index;
+		if (i3 < i2 && i3 < i1) {
+			return 3;
+		} else if (i2 < i3 && i2 < i1) {
+			return 2;
+		} else if (i1 < i3 && i1 < i2) {
+			return 1;
+		} else {
+			return undefined;
+		}
+	}
 
-// 	toHTML(): string {
-// 		let content = super.toHTML();
-// 		return `<strong><em>${this.marks}${content}${this.marks}</em></strong>`;
-// 	}
-// }
+	addMark(mark: TextToken): Token[] {
+		let type = mark.value.length;
+		if (this.types[type].marked) {
+			this.tokens.push(mark);
+			let token = this._parse(type, this.tokens.length);
+			return token ? [token] : [];
+		} else {
+			this.types[type].marked = true;
+			this.tokens.push(mark);
+			this.types[type].index = this.tokens.length - 1;
+			return [];
+		}
+	}
 
-class BoldToken extends Token {
-	marks: string;
+	addText(text: Token) {
+		this.tokens.push(text);
+	}
+
+	_splitToken(arrayIndex: number, insideIndex: number): [Token, Token] {
+		let token = this.tokens[arrayIndex];
+		let cut = new TextToken(
+			token.start + insideIndex,
+			token.end,
+			token.value.substring(insideIndex),
+		);
+		token.value = token.value.substring(0, insideIndex);
+		token.end = token.end - cut.length;
+		this.tokens.splice(arrayIndex + 1, 0, cut);
+		return [token, cut];
+	}
+
+	_parse(
+		type: number,
+		endIndex: number,
+		shouldYield: boolean = true,
+	): Token | undefined {
+		let startIndex = this.types[type].index;
+		let startMarks = this.tokens.splice(startIndex, startIndex + 1)[0];
+		let endMarks = this.tokens.splice(endIndex - 1, endIndex)[0];
+		let token = new FancyText(startMarks.start, endMarks.end, null, null, null);
+		token.startMarks = startMarks;
+		token.endMarks = endMarks;
+		let children = this.tokens.splice(startIndex + 1, endIndex - 1);
+		endIndex - children.length - 1;
+		for (const child of children) {
+			let preChild = token.tokens.at(-1);
+			if (preChild && preChild.type == "text" && child.type == "text") {
+				preChild.value += child.value;
+				token.value += child.value;
+				preChild.end = child.end;
+			} else {
+				token.tokens.push(child);
+				token.value += child.value;
+			}
+		}
+		let shouldYieldCheck = this._shouldYieldAfterParsing(type);
+		this.types[type].marked = false;
+		this.types[type].index = Number.POSITIVE_INFINITY;
+		if (shouldYieldCheck && this.tokens.length == 0 && shouldYield) {
+			return token;
+		} else {
+			this.tokens.splice(endIndex, 0, token);
+			return undefined;
+		}
+	}
+
+	_shouldYieldAfterParsing(type: number) {
+		if (type == 3) {
+			this.types[2].marked = false;
+			this.types[2].index = Number.POSITIVE_INFINITY;
+			this.types[1].marked = false;
+			this.types[1].index = Number.POSITIVE_INFINITY;
+			return true;
+		} else if (type == 2) {
+			if (this.types[3].marked) {
+				if (this.types[3].index < this.types[2].index) {
+					return false;
+				} else {
+					this.types[3].marked = false;
+					this.types[3].index = Number.POSITIVE_INFINITY;
+					return true;
+				}
+			} else if (this.types[1].marked) {
+				if (this.types[1].index < this.types[2].index) {
+					return false;
+				} else {
+					this.types[1].marked = false;
+					this.types[1].index = Number.POSITIVE_INFINITY;
+					return false;
+				}
+			} else {
+				return true;
+			}
+		} else {
+			if (this.types[3].marked) {
+				if (this.types[3].index < this.types[1].index) {
+					return false;
+				} else {
+					this.types[3].marked = false;
+					this.types[3].index = Number.POSITIVE_INFINITY;
+					return true;
+				}
+			} else if (this.types[2].marked) {
+				if (this.types[2].index < this.types[1].index) {
+					return false;
+				} else {
+					this.types[2].marked = false;
+					this.types[2].index = Number.POSITIVE_INFINITY;
+					return true;
+				}
+			} else {
+				return true;
+			}
+		}
+	}
+
+	finish(): Token[] {
+		let next = this.nextMark;
+		if (next) {
+			if (next == 3) {
+				if (this.types[2].marked) {
+					// Parse a bold token
+					let endBoldIndex = this.types[2].index;
+					if (this.types[1].marked) {
+						// Parse an italic token too
+						let endItalicIndex = this.types[1].index;
+						if (endItalicIndex < endBoldIndex) {
+							// Bold starts first
+							this._splitToken(this.types[3].index, 2);
+							this.types[2].index = this.types[3].index;
+							this.types[1].index = this.types[3].index + 1;
+							this.types[3].marked = false;
+							this.types[3].index = Number.POSITIVE_INFINITY;
+							this._parse(1, endItalicIndex, false);
+							this._parse(2, endBoldIndex, false);
+						} else {
+							// Italic starts first
+							this._splitToken(this.types[3].index, 1);
+							this.types[1].index = this.types[3].index;
+							this.types[2].index = this.types[3].index + 1;
+							this.types[3].marked = false;
+							this.types[3].index = Number.POSITIVE_INFINITY;
+							this._parse(2, endBoldIndex, false);
+							this._parse(1, endItalicIndex, false);
+						}
+					} else {
+						// Only Parse Bold, count second two chars as beginning
+						this._splitToken(this.types[3].index, 1);
+						this.types[2].index = this.types[3].index + 1;
+						this.types[3].marked = false;
+						this.types[3].index = Number.POSITIVE_INFINITY;
+						this._parse(2, endBoldIndex, false);
+					}
+				} else if (this.types[1].marked) {
+					// Only Parse Italics, count last char as beginning
+					let endItalicIndex = this.types[1].index;
+					this._splitToken(this.types[3].index, 2);
+					this.types[1].index = this.types[3].index + 1;
+					this.types[3].marked = false;
+					this.types[3].index = Number.POSITIVE_INFINITY;
+					this._parse(1, endItalicIndex, false);
+				}
+			} else if (next == 2) {
+				if (this.types[3].marked) {
+					// Parse a bold token
+					if (this.types[1].marked) {
+						// Parse a bold and italic token
+						if (this.types[1].index < this.types[3].index) {
+							// Italic is inside a part of bold
+							this._splitToken(this.types[3].index, 1);
+							let endBoldIndex = this.types[3].index + 1;
+							let endItalicIndex = this.types[3].index;
+							this.types[3].marked = false;
+							this.types[3].index = Number.POSITIVE_INFINITY;
+							this._parse(1, endItalicIndex, false);
+							this._parse(2, endBoldIndex, false);
+						} else {
+							// Italic is on the other side of bold
+							this._splitToken(this.types[3].index, 2);
+							let endBoldIndex = this.types[3].index;
+							let endItalicIndex = this.types[3].index + 1;
+							this.types[3].marked = false;
+							this.types[3].index = Number.POSITIVE_INFINITY;
+							this._parse(2, endBoldIndex, false);
+							this._parse(1, endItalicIndex, false);
+						}
+					} else {
+						this._splitToken(this.types[3].index, 2);
+						let endBoldIndex = this.types[3].index;
+						this.types[3].marked = false;
+						this.types[3].index = Number.POSITIVE_INFINITY;
+						this._parse(2, endBoldIndex, false);
+					}
+				}
+			} else {
+				if (this.types[3].marked) {
+					// Parse an italic token
+					if (this.types[2].marked) {
+						// Parse a bold and italic
+						if (this.types[2].index < this.types[3].index) {
+							// Bold is inside italic
+							this._splitToken(this.types[3].index, 2);
+							let endBoldIndex = this.types[3].index;
+							let endItalicIndex = this.types[3].index + 1;
+							this.types[3].marked = false;
+							this.types[3].index = Number.POSITIVE_INFINITY;
+							this._parse(2, endBoldIndex, false);
+							this._parse(1, endItalicIndex, false);
+						} else {
+							// Bold is on the other side of italic
+							this._splitToken(this.types[3].index, 1);
+							let endBoldIndex = this.types[3].index + 1;
+							let endItalicIndex = this.types[3].index;
+							this.types[3].marked = false;
+							this.types[3].index = Number.POSITIVE_INFINITY;
+							this._parse(1, endItalicIndex, false);
+							this._parse(2, endBoldIndex, false);
+						}
+					} else {
+						this._splitToken(this.types[3].index, 1);
+						let endItalicIndex = this.types[3].index;
+						this.types[3].marked = false;
+						this.types[3].index = Number.POSITIVE_INFINITY;
+						this._parse(1, endItalicIndex, false);
+					}
+				}
+			}
+			if (this.tokens.length > 1) {
+				for (const [index, token] of this.tokens.entries()) {
+					let preToken = this.tokens[index - 1];
+					if (preToken && preToken.type == "text" && token.type == "text") {
+						token.value = preToken.value + token.value;
+						token.start = preToken.start;
+					}
+				}
+			}
+			return this.tokens;
+		} else {
+			return [];
+		}
+	}
+}
+
+class FancyText extends Token {
+	startMarks: TextToken = new TextToken(0, 0, "***");
+	endMarks: TextToken = new TextToken(0, 0, "***");
 
 	constructor(
 		start: number,
 		end: number,
-		value: string,
-		marks: string,
-		raw: string,
+		marks: string | null,
+		text: string | null,
+		value: string | null,
 	) {
-		super(TokenType.bold, start, end, raw);
-		this.marks = marks;
+		super(start, end, value ?? "");
+		this.type = "fancyText";
+		if (marks && text) {
+			this.startMarks = new TextToken(start, start + marks.length, marks);
+			this.endMarks = new TextToken(end - marks.length, end, marks);
+			this.tokens.push(
+				new TextToken(start + marks.length, end - marks.length, text),
+			);
+		}
+	}
+
+	render(): string {
+		let html = super.render();
+		let base = `<span class="hidden">${this.startMarks.value}</span>${html}<span class="hidden">${this.endMarks.value}</span>`;
+		if (this.startMarks.length == 3) {
+			return `<strong><em>${base}</em></strong>`;
+		} else if (this.startMarks.length == 2) {
+			return `<strong>${base}</strong>`;
+		} else {
+			return `<em>${base}</em>`;
+		}
+	}
+}
+
+class BoldItalic extends Token {
+	marksStart: TextToken;
+	marksEnd: TextToken;
+
+	constructor(
+		start: number,
+		end: number,
+		marks: string,
+		text: string,
+		value: string,
+	) {
+		super(start, end, value);
+		this.type = "boldItalic";
+		this.marksStart = new TextToken(start, start + marks.length, marks);
+		this.marksEnd = new TextToken(end - marks.length, end, marks);
 		this.tokens.push(
-			new TextToken(value, start + marks.length, end - marks.length),
+			new TextToken(start + marks.length, end - marks.length, text),
 		);
 	}
 
-	toHTML(): string {
-		let content = super.toHTML();
-		return `<em>${this.marks}${content}${this.marks}</em>`;
+	render(): string {
+		let html = super.render();
+		return `<strong><em><span class="hidden">${this.marksStart.value}</span>${html}<span class="hidden">${this.marksEnd.value}</span></em></strong>`;
 	}
 }
 
-class ItalicToken extends Token {
-	marks: string;
+class Bold extends Token {
+	marksStart: TextToken;
+	marksEnd: TextToken;
 
 	constructor(
 		start: number,
 		end: number,
-		value: string,
 		marks: string,
-		raw: string,
+		text: string,
+		value: string,
 	) {
-		super(TokenType.italic, start, end, raw);
-		this.marks = marks;
+		super(start, end, value);
+		this.type = "bold";
+		this.marksStart = new TextToken(start, start + marks.length, marks);
+		this.marksEnd = new TextToken(end - marks.length, end, marks);
 		this.tokens.push(
-			new TextToken(value, start + marks.length, end - marks.length),
+			new TextToken(start + marks.length, end - marks.length, text),
 		);
 	}
 
-	toHTML(): string {
-		let content = super.toHTML();
-		return `<em>${this.marks}${content}${this.marks}</em>`;
+	render(): string {
+		let html = super.render();
+		return `<strong><span class="hidden">${this.marksStart.value}</span>${html}<span class="hidden">${this.marksEnd.value}</span></strong>`;
 	}
 }
 
-class CodeSpanToken extends Token {
-	ticks: string;
+class Italic extends Token {
+	marksStart: TextToken;
+	marksEnd: TextToken;
 
 	constructor(
 		start: number,
 		end: number,
+		marks: string,
+		text: string,
 		value: string,
+	) {
+		super(start, end, value);
+		this.type = "italic";
+		this.marksStart = new TextToken(start, start + marks.length, marks);
+		this.marksEnd = new TextToken(end - marks.length, end, marks);
+		this.tokens.push(
+			new TextToken(start + marks.length, end - marks.length, text),
+		);
+	}
+
+	render(): string {
+		let html = super.render();
+		return `<em><span class="hidden">${this.marksStart.value}</span>${html}<span class="hidden">${this.marksEnd.value}</span></em>`;
+	}
+}
+
+class CodeSpan extends Token {
+	ticksStart: TextToken;
+	ticksEnd: TextToken;
+
+	constructor(
+		start: number,
+		end: number,
 		ticks: string,
-		raw: string,
+		text: string,
+		value: string,
 	) {
-		super(TokenType.codespan, start, end, raw);
-		this.ticks = ticks;
+		super(start, end, value);
+		this.type = "codespan";
+		this.ticksStart = new TextToken(start, start + ticks.length, ticks);
+		this.ticksEnd = new TextToken(end - ticks.length, end, ticks);
 		this.tokens.push(
-			new TextToken(value, start + ticks.length, end - ticks.length),
+			new TextToken(start + ticks.length, end - ticks.length, text),
 		);
 	}
 
-	toHTML(): string {
-		let value = super.toHTML();
-		return `<code>${this.ticks}${value}${this.ticks}</code>`;
-	}
-}
-
-class TempTextToken extends Token {
-	constructor(value: string, start: number, end: number) {
-		super(TokenType.text, start, end, value);
-
-		let matches = this.raw.matchAll(Token.boldOrItalic);
-		let previousTokenEnd = 0;
-		for (const match of matches) {
-			if (previousTokenEnd < match.index) {
-				let textStart = this.start + previousTokenEnd;
-				this.tokens.push(
-					new TextToken(
-						this.raw.substring(previousTokenEnd, match.index),
-						textStart,
-						textStart + match[0].length,
-					),
-				);
-			}
-
-			let { value, marks } = match.groups!;
-			let start = this.start + match.index;
-			let end = start + match[0].length;
-			if (marks.length == 2) {
-				this.tokens.push(new BoldToken(start, end, value, marks, match[0]));
-			} else if (marks.length == 1) {
-				this.tokens.push(new ItalicToken(start, end, value, marks, match[0]));
-			}
-			previousTokenEnd = match.index;
-		}
-
-		if (previousTokenEnd < this.end) {
-			this.tokens.push(new TextToken(this.raw, previousTokenEnd, this.end));
-		}
+	render(): string {
+		let html = super.render();
+		return `<code><span class="hidden">${this.ticksStart.value}</span>${html}<span class="hidden">${this.ticksEnd.value}</span></code>`;
 	}
 }
 
 class TextToken extends Token {
-	get value() {
-		return this.raw;
+	constructor(start: number, end: number, value: string) {
+		super(start, end, value);
+		this.type = "text";
 	}
 
-	constructor(value: string, start: number, end: number) {
-		super(TokenType.text, start, end, value);
-	}
-
-	toHTML(): string {
-		return this.raw;
-	}
-
-	_parse() {
-		return true;
+	render() {
+		return this.value;
 	}
 }
 
-let markdown = "## Jotter\n\nhello therethis\n```java\nhello world\n```".repeat(
-	10000,
-);
+// let markdown = "## Jotter!".repeat(1);
 
-let perfStart = performance.now();
-let doc = new RootToken(markdown.length, markdown);
-let perfEnd = performance.now();
+// let perfStart = performance.now();
+// let doc = new MarkDoc(markdown);
+// let perfEnd = performance.now();
 
-let perf = perfEnd - perfStart;
-console.log(doc);
-console.log(markdown.length.toLocaleString());
-console.log(`${perf.toFixed(2)}ms`);
-
-// function tokenize(markdown: string): Token {
-// 	let blockRegex = new RegExp(
-// 		[Reg.header, Reg.code, Reg.paragraph].join("|"),
-// 		"gm",
-// 	);
-// 	let inlineRegex = new RegExp([Reg.boldItalic, Reg.codespan].join("|"), "gm");
-
-// 	let perfStart = performance.now();
-// 	let docTree = new RootToken(
-// 		markdown.length,
-// 		markdown,
-// 		tokenizeBlocks(markdown, blockRegex, inlineRegex, 0, markdown.length),
-// 	);
-// 	let perfEnd = performance.now();
-// 	console.log(docTree);
-// 	console.log(docTree.toHTML());
-// 	console.log(`${(perfEnd - perfStart).toFixed(2)}ms`);
-
-// 	return docTree;
-// }
-
-// function tokenizeBlocks(
-// 	text: string,
-// 	blockRegex: RegExp,
-// 	inlineRegex: RegExp,
-// 	start: number,
-// 	end: number,
-// ): Token[] {
-// 	let tokens: Token[] = [];
-// 	let previousTokenEnd = start;
-// 	let matches = text.matchAll(blockRegex);
-// 	for (const match of matches) {
-// 		let { content, hashes, lines, fence, lang } = match.groups;
-// 		let tokenStart = match.index;
-// 		let tokenEnd = tokenStart + match[0].length;
-// 		let token: Token;
-// 		if (hashes || lines) {
-// 			// This is a Header
-// 			token = new HeadingToken(
-// 				tokenStart,
-// 				tokenEnd,
-// 				hashes,
-// 				lines,
-// 				text.substring(tokenStart, tokenEnd),
-// 				tokenizeInlines(content, inlineRegex, tokenStart, tokenEnd),
-// 			);
-// 		} else if (fence) {
-// 			// Code Block
-// 			token = new CodeBlockToken(
-// 				tokenStart,
-// 				tokenEnd,
-// 				fence,
-// 				lang,
-// 				text.substring(tokenStart, tokenEnd),
-// 				tokenizeInlines(content, null, tokenStart, tokenEnd),
-// 			);
-// 		} else {
-// 			token = new ParagraphToken(
-// 				tokenStart,
-// 				tokenEnd,
-// 				text.substring(tokenStart, tokenEnd),
-// 				tokenizeInlines(content, inlineRegex, tokenStart, tokenEnd),
-// 			);
-// 		}
-
-// 		if (previousTokenEnd < tokenStart) {
-// 			tokens.push(
-// 				new ParagraphToken(
-// 					previousTokenEnd,
-// 					tokenStart,
-// 					text.substring(previousTokenEnd, tokenStart),
-// 					tokenizeInlines(
-// 						text.substring(previousTokenEnd, tokenStart),
-// 						inlineRegex,
-// 						previousTokenEnd,
-// 						tokenStart,
-// 					),
-// 				),
-// 			);
-// 		}
-
-// 		tokens.push(token);
-// 		previousTokenEnd = tokenEnd;
-// 		// console.log(match);
-// 	}
-
-// 	if (previousTokenEnd > 0 && previousTokenEnd < end) {
-// 		tokens.push(
-// 			new ParagraphToken(
-// 				previousTokenEnd,
-// 				end,
-// 				text.substring(previousTokenEnd, end),
-// 				tokenizeInlines(
-// 					text.substring(previousTokenEnd, end),
-// 					inlineRegex,
-// 					previousTokenEnd,
-// 					end,
-// 				),
-// 			),
-// 		);
-// 	}
-
-// 	if (tokens.length == 0) {
-// 		tokens.push(
-// 			new ParagraphToken(
-// 				0,
-// 				end,
-// 				text,
-// 				tokenizeInlines(text, inlineRegex, 0, end),
-// 			),
-// 		);
-// 	}
-
-// 	return tokens;
-// }
-
-// function tokenizeInlines(
-// 	text: string,
-// 	regex: RegExp | null,
-// 	start: number,
-// 	end: number,
-// ): Token[] {
-// 	let tokens: Token[] = [];
-// 	let previousTokenEnd = start;
-// 	let inlines;
-// 	if (regex) inlines = text.matchAll(regex);
-// 	for (const match of inlines ?? []) {
-// 		let { content, marks, ticks } = match.groups;
-// 		let tokenStart = match.index;
-// 		let tokenEnd = match[0].length;
-// 		let token: Token;
-// 		if (marks) {
-// 			if (marks.length == 3) {
-// 				token = new BoldItalicToken(
-// 					tokenStart,
-// 					tokenEnd,
-// 					marks,
-// 					text.substring(tokenStart, tokenEnd),
-// 					tokenizeInlines(
-// 						content,
-// 						new RegExp(Reg.bold, "gm"),
-// 						tokenStart,
-// 						tokenEnd,
-// 					),
-// 				);
-// 			} else if (marks.length == 2) {
-// 				token = new BoldToken(
-// 					tokenStart,
-// 					tokenEnd,
-// 					marks,
-// 					text.substring(tokenStart, tokenEnd),
-// 					tokenizeInlines(
-// 						content,
-// 						new RegExp(Reg.italic, "gm"),
-// 						tokenStart,
-// 						tokenEnd,
-// 					),
-// 				);
-// 			} else if (marks.length == 2) {
-// 				token = new ItalicToken(
-// 					tokenStart,
-// 					tokenEnd,
-// 					marks,
-// 					text.substring(tokenStart, tokenEnd),
-// 					[new TextToken(content, tokenStart, tokenEnd, [])],
-// 				);
-// 			} else {
-// 				token = new TextToken(content, tokenStart, tokenEnd, []);
-// 			}
-// 		} else if (ticks) {
-// 			token = new CodeSpanToken(
-// 				tokenStart,
-// 				tokenEnd,
-// 				ticks,
-// 				text.substring(tokenStart, tokenEnd),
-// 				[new TextToken(content, tokenStart, tokenEnd, [])],
-// 			);
-// 		} else {
-// 			token = new TextToken(content, tokenStart, tokenEnd, []);
-// 		}
-
-// 		if (previousTokenEnd < tokenStart) {
-// 			tokens.concat(
-// 				tokenizeInlines(
-// 					text.substring(previousTokenEnd, tokenStart),
-// 					new RegExp(Reg.boldItalic, "gm"),
-// 					previousTokenEnd,
-// 					tokenStart,
-// 				),
-// 			);
-// 		}
-
-// 		tokens.push(token);
-// 		previousTokenEnd = tokenEnd;
-// 	}
-
-// 	if (previousTokenEnd > 0 && previousTokenEnd < end) {
-// 		tokens.concat(
-// 			tokenizeInlines(
-// 				text.substring(previousTokenEnd, end),
-// 				new RegExp(Reg.boldItalic, "gm"),
-// 				previousTokenEnd,
-// 				end,
-// 			),
-// 		);
-// 	}
-
-// 	if (tokens.length == 0) {
-// 		tokens.push(new TextToken(text, start, end, []));
-// 	}
-
-// 	return tokens;
-// }
+// let perf = perfEnd - perfStart;
+// console.log(doc.render());
+// console.log(markdown.length.toLocaleString());
+// console.log(`${perf.toFixed(2)}ms`);
