@@ -12,11 +12,6 @@ export async function load_file(): Promise<string> {
 	return text;
 }
 
-export async function edit(tokens: TokensList, index: number): Promise<string> {
-	let result = marked.parser(tokens);
-	return result;
-}
-
 export async function save_markdown(markdown: string) {
 	await invoke("save_markdown", { markdown: markdown });
 }

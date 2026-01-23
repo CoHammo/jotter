@@ -4,9 +4,11 @@
 	import linkify from "marked-linkify-it";
 	import * as rust from "$lib/rust.svelte.ts";
 	import { untrack } from "svelte";
-	import { MarkDoc } from "$lib/markedit";
+	import { Doc } from "$lib/MarkdownEditor";
+	import { AIParser } from "$lib/MarkdownEditor/AIParser";
 
 	const md = new Marked();
+	const aiparser = new AIParser();
 
 	// const hooks = {
 	//     preprocess(markdown: string) {
@@ -30,15 +32,15 @@
 
 	let renderTime = $state(0);
 	let markdown = $state("# Jotter!");
-	let tokens = $state(new MarkDoc(""));
-	// let tokens = $state(md.lexer(markdown));
+	let tokens = $state(new Doc(""));
 	let rendermark = $state("");
 	$effect(() => {
 		let perfStart = performance.now();
-		let doc = new MarkDoc(markdown);
+		let toks = aiparser.parse(markdown);
+		// let doc = new Doc(markdown);
 		untrack(() => {
-			tokens = doc;
-			rendermark = doc.render();
+			tokens = toks;
+			rendermark = aiparser.renderHTML(toks);
 			let perfEnd = performance.now();
 			renderTime = perfEnd - perfStart;
 		});
@@ -101,9 +103,7 @@
 		onclick={updateCaret}
 		class="my-markdown outline-none overflow-auto"
 	></div>
-	<textarea>
-		{JSON.stringify(tokens, null, 2)}
-	</textarea>
+	<pre class="overflow-auto">{JSON.stringify(tokens, null, 2)}</pre>
 	<div class="overflow-auto">
 		{rendermark}
 	</div>
@@ -128,10 +128,9 @@
 		<button
 			class="h-8 hover:cursor-pointer hover:bg-amber-400 bg-amber-300 transition-all rounded font-bold px-3"
 			onclick={async () => {
-				let tokens = await rust.load_file();
+				let text = await rust.load_file();
 				let start = performance.now();
-				let edit = await rust.edit(tokens, 243581);
-				// await rust.save_markdown(text);
+				await rust.save_markdown(text);
 				let end = performance.now();
 				console.log(`${(end - start).toFixed(2)}ms`);
 			}}>Load MD</button
@@ -169,6 +168,14 @@
 			&:before {
 				content: "\2022  ";
 			}
+		}
+
+		pre {
+			@apply bg-gray-200 rounded p-1;
+		}
+
+		code {
+			@apply bg-gray-200 rounded py-0.5 px-1;
 		}
 
 		a {

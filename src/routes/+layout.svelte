@@ -7,7 +7,7 @@
 <header
 	class="bg-zinc-900 text-white h-12 justify-center items-center flex gap-4"
 >
-	<a href="/">Marked</a>
+	<a href="/">Custom</a>
 	<a href="/loro">Loro</a>
 </header>
 
