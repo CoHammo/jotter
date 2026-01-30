@@ -1,190 +1,400 @@
-class Parse {
-	marks: string;
-	level: string;
-	startIndex: number = -1;
-	blockParsers: Map<string, typeof Parse> = new Map();
-	inlineParsers: Map<string, typeof Parse> = new Map();
-	tokens: string[] = [];
+export type Str = { val: string; saveToks: boolean };
+const markdown: Str = {
+	val: "",
+	saveToks: false,
+};
+export type Token = {
+	name?: string;
+	start: number;
+	end: number;
+	len: number;
+	value?: string;
+	tokens?: Token[];
+	html?: string;
+	save?: boolean;
+} | null;
+// const fail: Token = null;
+export type Parser = ((text: Str, index: number) => Token) & {
+	startsWith: string[];
+};
 
-	constructor() {
-		this.marks = "";
-		this.level = "block";
-	}
-
-	parse(
-		text: string,
-		index: number,
-		blockParsers?: Map<string, typeof Parse>,
-		inlineParsers?: Map<string, typeof Parse>,
-	): [string[] | undefined, number] {
-		this.startIndex = index;
-		let checkForBlocks = false;
-		for (index; index < text.length; index++) {
-			if (index == 0) {
-				index = this.parseBlocks(text, index);
-			} else if (text[index] == "\n") {
-				checkForBlocks = true;
-			} else if (checkForBlocks) {
-				index = this.parseBlocks(text, index);
-				checkForBlocks = false;
-			}
-		}
-		if (this.startIndex < index) {
-			this.tokens.push(text.substring(this.startIndex, index));
-		}
-		return [this.tokens, text.length];
-	}
-
-	parseBlocks(text: string, index: number): number {
-		if (this.blockParsers.has(text[index])) {
-			let parser = new (this.blockParsers.get(text[index])!)();
-			let res = parser.parse(text, index);
-			if (res[0]) {
-				if (index > 1) this.tokens.push(text.substring(this.startIndex, index));
-				this.tokens.push(...res[0]);
-				index = res[1];
-				this.startIndex = index;
-				return index;
-			}
-		}
-		return index;
+export function char(c: string = ""): Parser {
+	if (c === "") {
+		const p: Parser = (text: Str, index: number): Token => {
+			if (index < text.val.length)
+				return { start: index, end: index + 1, len: 1 };
+			else return null;
+		};
+		p.startsWith = [""];
+		return p;
+	} else {
+		const char0 = c[0];
+		const p: Parser = (text: Str, index: number): Token => {
+			if (text.val[index] === char0)
+				return { start: index, end: index + 1, len: 1 };
+			else return null;
+		};
+		p.startsWith = [char0];
+		return p;
 	}
 }
 
-class HeadingParse extends Parse {
-	constructor() {
-		super();
-		this.marks = "#";
-		this.level = "block";
-	}
-
-	parse(
-		text: string,
-		index: number,
-		blockParsers?: Map<string, typeof Parse>,
-		inlineParsers?: Map<string, typeof Parse>,
-	): [string[] | undefined, number] {
-		this.startIndex = index;
-		return [[text.substring(this.startIndex, index + 1)], index + 1];
-	}
+export function rep(parse: Parser, min: number = 1, max: number = 0) {
+	if (min < 0) min = 0;
+	if (max >= 1 && max < min) max = min;
+	const p: Parser = (text: Str, index: number): Token => {
+		if (max < 1) max = text.val.length;
+		let count = 0;
+		const start = index;
+		const tokens: Token[] = [];
+		while (index < text.val.length && count < max) {
+			const tok = parse(text, index);
+			if (tok) {
+				if (tok.save || text.saveToks) tokens.push(tok);
+				else if (tok.tokens) tokens.push(...tok.tokens);
+				index += tok.len;
+				count++;
+			} else break;
+		}
+		if (count >= min)
+			return {
+				start,
+				end: index,
+				len: index - start,
+				tokens,
+			};
+		else return null;
+	};
+	p.startsWith = parse.startsWith;
+	return p;
 }
 
-class Parser {
-	marks = "";
-	start = -1;
-	children: Map<string, Parser> = new Map();
-	static next(
-		char: string,
-		index: number,
-		parser: Parser,
-	): {
-		parser: Parser | undefined;
-		isToken: boolean;
-	} {
-		if (parser.start == -1) {
-			parser.start = index;
-			return { parser: parser, isToken: true };
-		} else {
-			if (parser.children.has(char)) {
-				let p = parser.children.get(char)!;
-				Parser.next(char, index, p);
+export function until(
+	parse: Parser,
+	inclusive: boolean = false,
+	matchEOF: boolean = false,
+): Parser {
+	const p: Parser = (text: Str, index: number): Token => {
+		const start = index;
+		while (index < text.val.length) {
+			const tok = parse(text, index);
+			if (tok) {
+				if (inclusive) {
+					index += tok.len;
+					return {
+						start,
+						end: index,
+						len: index - start,
+						tokens: tok.save || text.saveToks ? [tok] : tok.tokens,
+					};
+				} else {
+					return { start, end: index, len: index - start };
+				}
+			}
+			index++;
+		}
+		if (matchEOF) return { start, end: index, len: index - start };
+		else return null;
+	};
+	p.startsWith = [""];
+	return p;
+}
+
+export function untilStr(
+	str?: string,
+	inclusive: boolean = false,
+	matchEOF: boolean = false,
+): Parser {
+	if (str) {
+		if (str === "") {
+			const p: Parser = (text: Str, index: number): Token => {
 				return {
-					parser: p,
-					isToken: false,
+					start: index,
+					end: text.val.length,
+					len: text.val.length - index,
 				};
+			};
+			p.startsWith = [""];
+			return p;
+		}
+		const p: Parser = (text: Str, index: number): Token => {
+			if (index > text.val.length) return null;
+			const end = text.val.indexOf(str, index);
+			if (end === -1) {
+				if (matchEOF)
+					return {
+						start: index,
+						end: text.val.length,
+						len: text.val.length - index,
+					};
+				else return null;
+			}
+			return {
+				start: index,
+				end,
+				len: end + (inclusive ? str.length : 0) - index,
+			};
+		};
+		p.startsWith = [""];
+		return p;
+	} else {
+		const p: Parser = (text: Str, index: number): Token => {
+			if (index === 0) return { start: 0, end: 0, len: 0 };
+			else return null;
+		};
+		p.startsWith = [""];
+		return p;
+	}
+}
+
+export function run(parsers: Parser[]): Parser {
+	const p: Parser = (text: Str, index: number): Token => {
+		const start = index;
+		const tokens: Token[] = [];
+		for (let i = 0; i < parsers.length; i++) {
+			const tok = parsers[i](text, index);
+			if (tok) {
+				index += tok.len;
+				if (tok.save || text.saveToks) tokens.push(tok);
+				else if (tok.tokens) tokens.push(...tok.tokens);
+			} else return null;
+		}
+		return {
+			start,
+			end: index,
+			len: index - start,
+			tokens,
+		};
+	};
+	p.startsWith = parsers[0].startsWith;
+	return p;
+}
+
+export function any(parsers: Parser[]): Parser {
+	const map = new Map<string, Parser[]>();
+	const startAnywhere: Parser[] = [];
+
+	for (let i = 0; i < parsers.length; i++) {
+		const parse = parsers[i];
+		for (let j = 0; j < parse.startsWith.length; j++) {
+			const char = parse.startsWith[j];
+			if (char === "") {
+				startAnywhere.push(parse);
 			} else {
-				return { parser: parser, isToken: true };
+				if (!map.has(char)) map.set(char, []);
+				map.get(char)!.push(parse);
 			}
 		}
 	}
-}
 
-class Maker {
-	currentParser: Parser | undefined;
-	parser: Parser;
-	constructor(parser: Parser) {
-		this.parser = parser;
-	}
-	next(char: string, index: number) {
-		// console.log(this.currentParser);
-		if (this.currentParser) {
-			let res = Parser.next(char, index, this.currentParser);
-			if (res.parser) {
-				this.currentParser = res.parser;
-			}
-		} else {
-			if (this.parser.marks == char) {
-				this.currentParser = this.parser;
-				Parser.next(char, index, this.currentParser);
+	const p: Parser = (text: Str, index: number): Token => {
+		const char = text.val[index];
+		const primary = map.get(char);
+		if (primary) {
+			for (let i = 0; i < primary.length; i++) {
+				const res = primary[i](text, index);
+				if (res) return res;
 			}
 		}
+		for (let i = 0; i < startAnywhere.length; i++) {
+			const res = startAnywhere[i](text, index);
+			if (res) return res;
+		}
+		return null;
+	};
+
+	const allStarts = new Set<string>();
+	for (let i = 0; i < parsers.length; i++) {
+		const ps = parsers[i].startsWith;
+		for (let j = 0; j < ps.length; j++) {
+			allStarts.add(ps[j]);
+		}
 	}
+	p.startsWith = Array.from(allStarts);
+
+	return p;
 }
 
-class Char {
-	char: string;
-	from: number;
-	to: number;
-	constructor(char: string, from?: number, to?: number) {
-		this.char = char;
-		this.from = from ?? 1;
-		this.to = to ?? 1;
-	}
+export function lazy(fn: () => Parser): Parser {
+	let cached: Parser | null = null;
+	const p: Parser = (text: Str, index: number): Token => {
+		if (!cached) cached = fn();
+		return cached(text, index);
+	};
+	// We can't easily know startsWith before execution for lazy
+	p.startsWith = [""];
+	return p;
 }
 
-class Rule {
-	pat: Char[];
-	parse: (text: string, index: number) => boolean;
-
-	constructor(pat: Char[], parse: (text: string, index: number) => boolean) {
-		this.pat = pat;
-		this.parse = parse;
-	}
+export function not(parser: Parser, takeOnNot: number = 0): Parser {
+	const p: Parser = (text: Str, index: number): Token => {
+		const res = parser(text, index);
+		if (res) return null;
+		else return { start: index, end: index + takeOnNot, len: takeOnNot };
+	};
+	p.startsWith = [""];
+	return p;
 }
 
-const HRule = new Rule(
-	[new Char("\n"), new Char("#", 1, 6), new Char(" ")],
-	() => true,
+export function all(parse: Parser, tokenize: boolean = true): Parser {
+	const p: Parser = (text: Str, index: number): Token => {
+		const start = index;
+		const tokens: Token[] = [];
+		let count = 0;
+		while (index < text.val.length) {
+			const tok = parse(text, index);
+			if (tok) {
+				if (tok.save || text.saveToks) tokens.push(tok);
+				else if (tok.tokens) tokens.push(...tok.tokens);
+				index += tok.len;
+				count++;
+			} else index++;
+		}
+		if (count === 0) return null;
+		else return { start, end: index, len: index - start, tokens };
+	};
+	p.startsWith = parse.startsWith;
+	return p;
+}
+
+export function check(
+	parse: Parser,
+	before: (text: Str, index: number) => boolean = () => true,
+	after: (tok: Token, text: Str) => boolean = () => true,
+): Parser {
+	const p: Parser = (text: Str, index: number): Token => {
+		if (before(text, index)) {
+			const tok = parse(text, index);
+			if (tok && after(tok, text)) return tok;
+		}
+		return null;
+	};
+	p.startsWith = parse.startsWith;
+	return p;
+}
+
+export function render(
+	parse: Parser,
+	name?: string,
+	saveValue: boolean = false,
+	render: ((tok: Token, text: Str) => void) | null = (
+		tok: Token,
+		text: Str,
+	) => {
+		if (tok) {
+			if (tok.value) tok.html = tok.value;
+			else tok.html = text.val.slice(tok.start, tok.end);
+		}
+	},
+) {
+	const p: Parser = (text: Str, index: number): Token => {
+		const tok = parse(text, index);
+		if (tok) {
+			tok.save = true;
+			if (name) tok.name = name;
+			if (saveValue) tok.value = text.val.slice(tok.start, tok.end);
+			if (render) render(tok, text);
+		}
+		return tok;
+	};
+	p.startsWith = parse.startsWith;
+	return p;
+}
+
+const whiteSpace = rep(any([char(" "), char("\t"), char("\n")]));
+
+function renderHeading(tok: Token, text: Str) {
+	const conStart = text.val.indexOf(" ", tok!.start) + 1;
+	const hashes = text.val.slice(tok!.start, conStart);
+	const level = hashes.length - 1;
+	const content = text.val.slice(conStart, tok!.end);
+	tok!.html = `<h${level}><span class="hidden">${hashes}</span>${content}</h${level}>`;
+}
+
+export function renderTokens(toks: Token[]): string {
+	let html = "";
+	for (let i = 0; i < toks.length; i++) {
+		html += toks[i]?.html ?? "";
+	}
+	return html;
+}
+
+const iMark = char("*");
+const italic = render(
+	run([iMark, lazy(() => inline(italic, iMark)), iMark]),
+	"italic",
 );
 
-class P {
-	char: string;
-	subs: Map<string, P> = new Map();
-	constructor(char: string) {
-		this.char = char[0];
+const endMarks = any([iMark, char("\n")]);
+const inl = rep(run([not(endMarks), char()]));
+function inline(current?: Parser, stop?: Parser): Parser {
+	const inlines = [inl, italic];
+	if (current && stop) {
+		let i = inlines.indexOf(current);
+		inlines.splice(i, 1);
+		return rep(any(inlines));
 	}
-	parse(text: string, index: number): boolean {
-		return false;
-	}
+	let im = char("*");
+	im.startsWith = [""];
+	inlines.push(im);
+	inlines.push(untilStr("\n", true, true));
+	return rep(any(inlines));
 }
 
-function makeParser(rule: Rule) {
-	for (let i = 0; i < rule.pat.length; i++) {}
-}
-
-function char(char: string, from: number = 1, to: number = 1) {
-	if (from < 1) from = 1;
-	if (to < 1) to = 0;
-	return (text: string, index: number): [string | null, number] => {
-		let start = index;
-		let found = 0;
-		for (index; index < (to == 0 ? text.length : index + to); index++) {
-			if (text[index] == char[0]) found++;
-			else break;
+const heading = render(
+	run([
+		run([rep(char("#"), 1, 6), char(" ")]),
+		// inline(),
+		untilStr("\n", true, true),
+	]),
+	"paragraph",
+	false,
+	renderHeading,
+);
+const toNewline = render(
+	untilStr("\n", true, true),
+	"paragraph",
+	false,
+	(tok, text) => {
+		tok!.html = `<p>${text.val.slice(tok!.start, tok!.end)}</p>`;
+	},
+);
+const blocks = any([heading]);
+const markParse: Parser = (text: Str, index: number): Token => {
+	const tokens: Token[] = [];
+	const start = index;
+	while (index < text.val.length) {
+		let res = blocks(text, index);
+		if (res) {
+			index += res.len;
+		} else {
+			res = toNewline(text, index);
+			index += res!.len;
 		}
-		if (found >= from) return [text.substring(start, index), found];
-		else return [null, 0];
+		tokens.push(res);
+	}
+	const html = renderTokens(tokens);
+	return {
+		start,
+		end: index,
+		len: index - start,
+		name: "root",
+		tokens,
+		html,
 	};
-}
+};
+markParse.startsWith = [];
 
-let markdown = "# Jotter!\n# Hey".repeat(1);
-let parser = new Parse();
-parser.blockParsers.set("#", HeadingParse);
-let hparse = char("#", 1, 6);
-let perfStart = performance.now();
-let res = hparse(markdown, 0);
-// let results = parser.parse(markdown, 0);
-let perfEnd = performance.now();
-console.log(res);
-// console.log(results);
-console.log(`${(perfEnd - perfStart).toFixed(2)}ms`);
+markdown.val = "Hello there\n".repeat(1);
+markdown.saveToks = false;
+
+const perfStart = performance.now();
+const result = markParse(markdown, 0);
+const perfEnd = performance.now();
+
+console.log(result);
+// console.log(result.html);
+// console.log(JSON.stringify(result, null, 2));
+console.log(`Parsed Tokens: ${result!.tokens?.length.toLocaleString() ?? 0}`);
+console.log(`Markdown Length: ${markdown.val.length.toLocaleString()}`);
+console.log(`Time: ${(perfEnd - perfStart).toFixed(2)}ms`);
