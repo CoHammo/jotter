@@ -12,15 +12,14 @@ export type Token = {
 	tokens?: Token[];
 	html?: string;
 	save?: boolean;
-} | null;
-// const fail: Token = null;
-export type Parser = ((text: Str, index: number) => Token) & {
+};
+export type Parser = ((text: Str, index: number) => Token | null) & {
 	startsWith: string[];
 };
 
 export function char(c: string = ""): Parser {
 	if (c === "") {
-		const p: Parser = (text: Str, index: number): Token => {
+		const p: Parser = (text: Str, index: number): Token | null => {
 			if (index < text.val.length)
 				return { start: index, end: index + 1, len: 1 };
 			else return null;
@@ -29,7 +28,7 @@ export function char(c: string = ""): Parser {
 		return p;
 	} else {
 		const char0 = c[0];
-		const p: Parser = (text: Str, index: number): Token => {
+		const p: Parser = (text: Str, index: number): Token | null => {
 			if (text.val[index] === char0)
 				return { start: index, end: index + 1, len: 1 };
 			else return null;
@@ -42,7 +41,7 @@ export function char(c: string = ""): Parser {
 export function rep(parse: Parser, min: number = 1, max: number = 0) {
 	if (min < 0) min = 0;
 	if (max >= 1 && max < min) max = min;
-	const p: Parser = (text: Str, index: number): Token => {
+	const p: Parser = (text: Str, index: number): Token | null => {
 		if (max < 1) max = text.val.length;
 		let count = 0;
 		const start = index;
@@ -74,7 +73,7 @@ export function until(
 	inclusive: boolean = false,
 	matchEOF: boolean = false,
 ): Parser {
-	const p: Parser = (text: Str, index: number): Token => {
+	const p: Parser = (text: Str, index: number): Token | null => {
 		const start = index;
 		while (index < text.val.length) {
 			const tok = parse(text, index);
@@ -107,7 +106,7 @@ export function untilStr(
 ): Parser {
 	if (str) {
 		if (str === "") {
-			const p: Parser = (text: Str, index: number): Token => {
+			const p: Parser = (text: Str, index: number): Token | null => {
 				return {
 					start: index,
 					end: text.val.length,
@@ -117,9 +116,9 @@ export function untilStr(
 			p.startsWith = [""];
 			return p;
 		}
-		const p: Parser = (text: Str, index: number): Token => {
+		const p: Parser = (text: Str, index: number): Token | null => {
 			if (index > text.val.length) return null;
-			const end = text.val.indexOf(str, index);
+			let end = text.val.indexOf(str, index);
 			if (end === -1) {
 				if (matchEOF)
 					return {
@@ -129,16 +128,17 @@ export function untilStr(
 					};
 				else return null;
 			}
+			end += inclusive ? str.length : 0;
 			return {
 				start: index,
 				end,
-				len: end + (inclusive ? str.length : 0) - index,
+				len: end - index,
 			};
 		};
 		p.startsWith = [""];
 		return p;
 	} else {
-		const p: Parser = (text: Str, index: number): Token => {
+		const p: Parser = (text: Str, index: number): Token | null => {
 			if (index === 0) return { start: 0, end: 0, len: 0 };
 			else return null;
 		};
@@ -148,7 +148,7 @@ export function untilStr(
 }
 
 export function run(parsers: Parser[]): Parser {
-	const p: Parser = (text: Str, index: number): Token => {
+	const p: Parser = (text: Str, index: number): Token | null => {
 		const start = index;
 		const tokens: Token[] = [];
 		for (let i = 0; i < parsers.length; i++) {
@@ -187,7 +187,7 @@ export function any(parsers: Parser[]): Parser {
 		}
 	}
 
-	const p: Parser = (text: Str, index: number): Token => {
+	const p: Parser = (text: Str, index: number): Token | null => {
 		const char = text.val[index];
 		const primary = map.get(char);
 		if (primary) {
@@ -217,7 +217,7 @@ export function any(parsers: Parser[]): Parser {
 
 export function lazy(fn: () => Parser): Parser {
 	let cached: Parser | null = null;
-	const p: Parser = (text: Str, index: number): Token => {
+	const p: Parser = (text: Str, index: number): Token | null => {
 		if (!cached) cached = fn();
 		return cached(text, index);
 	};
@@ -227,7 +227,7 @@ export function lazy(fn: () => Parser): Parser {
 }
 
 export function not(parser: Parser, takeOnNot: number = 0): Parser {
-	const p: Parser = (text: Str, index: number): Token => {
+	const p: Parser = (text: Str, index: number): Token | null => {
 		const res = parser(text, index);
 		if (res) return null;
 		else return { start: index, end: index + takeOnNot, len: takeOnNot };
@@ -237,7 +237,7 @@ export function not(parser: Parser, takeOnNot: number = 0): Parser {
 }
 
 export function all(parse: Parser, tokenize: boolean = true): Parser {
-	const p: Parser = (text: Str, index: number): Token => {
+	const p: Parser = (text: Str, index: number): Token | null => {
 		const start = index;
 		const tokens: Token[] = [];
 		let count = 0;
@@ -262,7 +262,7 @@ export function check(
 	before: (text: Str, index: number) => boolean = () => true,
 	after: (tok: Token, text: Str) => boolean = () => true,
 ): Parser {
-	const p: Parser = (text: Str, index: number): Token => {
+	const p: Parser = (text: Str, index: number): Token | null => {
 		if (before(text, index)) {
 			const tok = parse(text, index);
 			if (tok && after(tok, text)) return tok;
@@ -287,7 +287,7 @@ export function render(
 		}
 	},
 ) {
-	const p: Parser = (text: Str, index: number): Token => {
+	const p: Parser = (text: Str, index: number): Token | null => {
 		const tok = parse(text, index);
 		if (tok) {
 			tok.save = true;
@@ -304,17 +304,21 @@ export function render(
 const whiteSpace = rep(any([char(" "), char("\t"), char("\n")]));
 
 function renderHeading(tok: Token, text: Str) {
-	const conStart = text.val.indexOf(" ", tok!.start) + 1;
-	const hashes = text.val.slice(tok!.start, conStart);
+	const conStart = text.val.indexOf(" ", tok.start) + 1;
+	const hashes = text.val.slice(tok.start, conStart);
 	const level = hashes.length - 1;
-	const content = text.val.slice(conStart, tok!.end);
-	tok!.html = `<h${level}><span class="hidden">${hashes}</span>${content}</h${level}>`;
+	const content = text.val.slice(conStart, tok.end);
+	tok.html = `<h${level}><span class="hidden">${hashes}</span>${content}</h${level}>`;
+}
+
+function renderParagraph(tok: Token, text: Str) {
+	tok.html = `<p>${text.val.slice(tok.start, tok.end)}</p>`;
 }
 
 export function renderTokens(toks: Token[]): string {
 	let html = "";
 	for (let i = 0; i < toks.length; i++) {
-		html += toks[i]?.html ?? "";
+		html += toks[i].html ?? "";
 	}
 	return html;
 }
@@ -347,31 +351,58 @@ const heading = render(
 		// inline(),
 		untilStr("\n", true, true),
 	]),
-	"paragraph",
+	"heading",
 	false,
 	renderHeading,
 );
-const toNewline = render(
-	untilStr("\n", true, true),
-	"paragraph",
-	false,
-	(tok, text) => {
-		tok!.html = `<p>${text.val.slice(tok!.start, tok!.end)}</p>`;
-	},
-);
+const toNewline = until(char("\n"), true, true);
 const blocks = any([heading]);
-const markParse: Parser = (text: Str, index: number): Token => {
+const blocksPreChecked = check(blocks, (text, index) => {
+	if (index === 0 || text.val[index - 1] === "\n") return true;
+	else return false;
+});
+
+const smallParser = rep(
+	render(
+		until(any([rep(char("\n"), 2, 2), blocksPreChecked]), true, true),
+		"paragraph",
+		false,
+		renderParagraph,
+	),
+);
+const fullParser: Parser = (text: Str, index: number): Token | null => {
 	const tokens: Token[] = [];
 	const start = index;
+	let checkBlocks = true;
+	let para: Token = { name: "paragraph", start: 0, end: 0, len: 0 };
 	while (index < text.val.length) {
-		let res = blocks(text, index);
-		if (res) {
-			index += res.len;
+		let tok = blocks(text, index);
+		if (tok) {
+			index = tok.end;
+			if (para.len > 0) {
+				tokens.push(para);
+				para = { name: "paragraph", start: index, end: index, len: 0 };
+			}
+			tokens.push(tok);
 		} else {
-			res = toNewline(text, index);
-			index += res!.len;
+			tok = toNewline(text, index);
+			if (tok) {
+				if (para.start === 0 && index > 0) para.start = index;
+				index = tok.end;
+				para.end = tok.end;
+				para.len += tok.len;
+				if (text.val[index] === "\n" || index === text.val.length) {
+					if (text.val[index] === "\n") {
+						index++;
+						para.end++;
+						para.len++;
+					}
+					renderParagraph(para, text);
+					tokens.push(para);
+					para = { name: "paragraph", start: index, end: index, len: 0 };
+				}
+			}
 		}
-		tokens.push(res);
 	}
 	const html = renderTokens(tokens);
 	return {
@@ -383,16 +414,16 @@ const markParse: Parser = (text: Str, index: number): Token => {
 		html,
 	};
 };
-markParse.startsWith = [];
+fullParser.startsWith = [];
 
-markdown.val = "Hello there\n".repeat(1);
+markdown.val = "# Jotter!\n".repeat(1);
 markdown.saveToks = false;
 
 const perfStart = performance.now();
-const result = markParse(markdown, 0);
+const result = fullParser(markdown, 0);
 const perfEnd = performance.now();
 
-console.log(result);
+// console.log(result);
 // console.log(result.html);
 // console.log(JSON.stringify(result, null, 2));
 console.log(`Parsed Tokens: ${result!.tokens?.length.toLocaleString() ?? 0}`);
