@@ -1,8 +1,8 @@
-export type Str = { val: string; index: number; saveToks: boolean };
-const markdown: Str = {
-	val: "",
-	index: 0,
-	saveToks: false,
+export type Str = {
+	val: string;
+	index: number;
+	saveToks?: boolean;
+	result?: string;
 };
 export type Token = {
 	name?: string;
@@ -70,8 +70,10 @@ export function rep(parse: Parser, min?: number, max?: number) {
 		while (text.index < text.val.length && count < maxmax) {
 			const res = parse(text);
 			if (res[0]) {
-				if (res[1]) tokens.push(...res[1]);
-				if (res[2]) tokens.push(...res[2]);
+				if (res[1])
+					for (let i = 0; i < res[1].length; i++) tokens.push(res[1][i]);
+				if (res[2])
+					for (let i = 0; i < res[2].length; i++) tokens.push(res[2][i]);
 				count++;
 			} else break;
 		}
@@ -87,19 +89,17 @@ export function rep(parse: Parser, min?: number, max?: number) {
 	return p;
 }
 
-export function repChar(char: string, min?: number, max?: number): Parser {
+export function repChar(char: string = "", min?: number, max?: number): Parser {
 	let [minmin, maxmax] = findMinMax(min, max);
-	const c = char[0];
+	const c = char === "" ? "" : char[0];
 	const p: Parser = (text: Str): ParseResult => {
 		let count = 0;
 		const start = text.index;
-		while (
-			text.index < text.val.length &&
-			text.val[text.index] === c &&
-			count < maxmax
-		) {
-			text.index++;
-			count++;
+		while (text.index < text.val.length && count < maxmax) {
+			if (c === "" || text.val[text.index] === c) {
+				text.index++;
+				count++;
+			} else break;
 		}
 		if (count >= minmin) return [true];
 		else {
@@ -188,12 +188,14 @@ export function repUntil(
 			const end = ender(text);
 			if (end[0]) {
 				if (end[1]) {
-					if (ownEndTokens) children.push(...end[1]);
-					else afters.push(...end[1]);
+					if (ownEndTokens)
+						for (let i = 0; i < end[1].length; i++) children.push(end[1][i]);
+					else for (let i = 0; i < end[1].length; i++) afters.push(end[1][i]);
 				}
 				if (end[2]) {
-					if (ownEndTokens) children.push(...end[2]);
-					else afters.push(...end[2]);
+					if (ownEndTokens)
+						for (let i = 0; i < end[2].length; i++) children.push(end[2][i]);
+					else for (let i = 0; i < end[2].length; i++) afters.push(end[2][i]);
 				}
 				if (children.length > 0) return [true, children];
 				else if (afters.length > 0) return [true, undefined, afters];
@@ -203,17 +205,21 @@ export function repUntil(
 		while (text.index < text.val.length) {
 			const res = repper(text);
 			if (res[0]) {
-				if (res[1]) children.push(...res[1]);
-				if (res[2]) children.push(...res[2]);
+				if (res[1])
+					for (let i = 0; i < res[1].length; i++) children.push(res[1][i]);
+				if (res[2])
+					for (let i = 0; i < res[2].length; i++) children.push(res[2][i]);
 				const end = ender(text);
 				if (end[0]) {
 					if (end[1]) {
-						if (ownEndTokens) children.push(...end[1]);
-						else afters.push(...end[1]);
+						if (ownEndTokens)
+							for (let i = 0; i < end[1].length; i++) children.push(end[1][i]);
+						else for (let i = 0; i < end[1].length; i++) afters.push(end[1][i]);
 					}
 					if (end[2]) {
-						if (ownEndTokens) children.push(...end[2]);
-						else afters.push(...end[2]);
+						if (ownEndTokens)
+							for (let i = 0; i < end[2].length; i++) children.push(end[2][i]);
+						else for (let i = 0; i < end[2].length; i++) afters.push(end[2][i]);
 					}
 					if (children.length > 0 && afters.length > 0)
 						return [true, children, afters];
@@ -245,7 +251,10 @@ export function run(parsers: Parser[]): Parser {
 		for (let i = 0; i < parsers.length; i++) {
 			const res = parsers[i](text);
 			if (res[0]) {
-				if (res[1]) tokens.push(...res[1]);
+				if (res[1])
+					for (let i = 0; i < res[1].length; i++) tokens.push(res[1][i]);
+				if (res[2])
+					for (let i = 0; i < res[2].length; i++) tokens.push(res[2][i]);
 			} else {
 				text.index = start;
 				return [false];
@@ -379,82 +388,25 @@ export function token(
 	return p;
 }
 
-const whiteSpace = rep(any([char(" "), char("\t"), char("\n")]));
-
-function renderHeading(tok: Token, text: Str) {
-	const conStart = text.val.indexOf(" ", tok.start) + 1;
-	const hashes = text.val.slice(tok.start, conStart);
-	const level = hashes.length - 1;
-	const content = text.val.slice(conStart, tok.end);
-	tok.html = `<h${level}><span class="peek">${hashes}</span>${content}</h${level}>`;
+export function post(
+	parse: Parser,
+	process: (text: Str, toks: Token[]) => void,
+): Parser {
+	const p: Parser = (text: Str): ParseResult => {
+		const res = parse(text);
+		if (res[0]) {
+			const tokens: Token[] = [];
+			if (res[1])
+				for (let i = 0; i < res[1].length; i++) tokens.push(res[1][i]);
+			if (res[2])
+				for (let i = 0; i < res[2].length; i++) tokens.push(res[2][i]);
+			if (tokens.length > 0) process(text, tokens);
+		}
+		if (res[1] == undefined) res[1] = [];
+		return res;
+	};
+	p.keys = parse.keys;
+	return p;
 }
 
-function renderParagraph(tok: Token, text: Str) {
-	tok.html = `<p>${text.val.slice(tok.start, tok.end)}</p>`;
-}
-
-export function renderTokens(toks: Token[]): string {
-	let html = "";
-	for (let i = 0; i < toks.length; i++) {
-		html += toks[i].html ?? "";
-	}
-	return html;
-}
-
-const iMark = char("*");
-const italic = token(
-	run([iMark, lazy(() => inline(italic, iMark)), iMark]),
-	"italic",
-);
-
-const endMarks = any([iMark, char("\n")]);
-const inl = rep(run([not(endMarks), char()]));
-function inline(current?: Parser, stop?: Parser): Parser {
-	const inlines = [inl, italic];
-	if (current && stop) {
-		let i = inlines.indexOf(current);
-		inlines.splice(i, 1);
-		return rep(any(inlines));
-	}
-	let im = char("*");
-	im.keys = [""];
-	inlines.push(im);
-	inlines.push(untilStr("\n", true));
-	return rep(any(inlines));
-}
-
-const heading = token(
-	run([repChar("#", 1, 6), char(" "), untilStr("\n", true)]),
-	"heading",
-	true,
-	renderHeading,
-);
-const blocks = any([heading]);
-
-const test = rep(
-	token(
-		repUntil(
-			untilStr("\n", true),
-			any([blocks, repChar("\n", 2)]),
-			true,
-			false,
-			true,
-		),
-		"paragraph",
-	),
-);
-
-markdown.val = "# Jotter!\nHello man\n".repeat(500000);
-markdown.saveToks = false;
-markdown.index = 0;
-
-const perfStart = performance.now();
-const result = test(markdown);
-const perfEnd = performance.now();
-
-// console.log(result);
-// console.log(result.html);
-// console.log(JSON.stringify(result, null, 2));
-// console.log(`Parsed Tokens: ${result!.tokens?.length.toLocaleString() ?? 0}`);
-console.log(`Markdown Length: ${markdown.val.length.toLocaleString()}`);
-console.log(`Time: ${(perfEnd - perfStart).toFixed(2)}ms`);
+export const whiteSpace = rep(any([char(" "), char("\t"), char("\n")]));

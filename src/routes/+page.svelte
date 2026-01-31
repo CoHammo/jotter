@@ -1,60 +1,24 @@
 <script lang="ts">
-	import { Marked } from "marked";
-	import xTables from "@fsegurai/marked-extended-tables";
-	import linkify from "marked-linkify-it";
 	import * as rust from "$lib/rust.svelte.ts";
 	import { untrack } from "svelte";
-	import { Doc } from "$lib/MarkdownEditor";
-	import { AIParser } from "$lib/MarkdownEditor/AIParser";
-
-	const md = new Marked();
-	const aiparser = new AIParser();
-
-	// const hooks = {
-	//     preprocess(markdown: string) {
-	//         return markdown.replace(/\n{2,}/g, (match) => {
-	//             const brCount = match.length - 1;
-	//             return "\n\n" + "<br>".repeat(brCount) + "\n\n";
-	//         });
-	//     },
-	// };
-	// md.use({ hooks }, xTables(), linkify({}, {}));
-
-	const renderer = {
-		heading({ tokens, depth }) {
-			const text = this.parser.parseInline(tokens);
-			const escapedText = text.toLowerCase().replace(/[^\w]+/g, "-");
-			return `<h${depth}><span class="hhash">${"#".repeat(depth)}</span> ${text}</h${depth}>`;
-		},
-	};
-
-	md.use({ renderer, async: false }, xTables(), linkify({}, {}));
+	import type { Token, ParseResult, Str } from "$lib/MarkdownEditor";
+	import { markParse } from "$lib/MarkdownEditor";
 
 	let renderTime = $state(0);
 	let markdown = $state("# Jotter!");
-	let tokens = $state(new Doc(""));
+	let tokens: Token[] = $state([]);
 	let rendermark = $state("");
 	$effect(() => {
 		let perfStart = performance.now();
-		let toks = aiparser.parse(markdown);
-		// let doc = new Doc(markdown);
+		let mark: Str = { val: markdown, index: 0 };
+		let toks = markParse(mark);
 		untrack(() => {
-			tokens = toks;
-			rendermark = aiparser.renderHTML(toks);
+			tokens = toks[1]!;
+			rendermark = mark.result ?? "";
 			let perfEnd = performance.now();
 			renderTime = perfEnd - perfStart;
 		});
-
-		// let perfStart = performance.now();
-		// let result = md.lexer(markdown);
-		// untrack(() => {
-		// 	tokens = result;
-		// 	rendermark = md.parser(result);
-		// 	let perfEnd = performance.now();
-		// 	renderTime = perfEnd - perfStart;
-		// });
 	});
-	let markdownBox: HTMLTextAreaElement | undefined = $state();
 	let renderBox: HTMLDivElement | undefined = $state();
 	let caret = $state({ pos: 0, range: document.createRange() });
 
@@ -83,7 +47,6 @@
 	class="grid grid-cols-2 grid-rows-[1fr_1fr_0.1fr] gap-0.5 h-full bg-black *:bg-white *:p-3"
 >
 	<textarea
-		bind:this={markdownBox}
 		class="resize-none outline-none"
 		name="rawmark"
 		id="rawmark"

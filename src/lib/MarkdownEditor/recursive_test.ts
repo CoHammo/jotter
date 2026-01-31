@@ -1,5 +1,15 @@
-import { char, seqG, seq, alt, many, lazy, not, map, until } from "./Parser";
-import type { Parser } from "./Parser";
+import {
+	char,
+	seqG,
+	seq,
+	alt,
+	many,
+	lazy,
+	not,
+	map,
+	until,
+} from "./MarkParser";
+import type { Parser } from "./MarkParser";
 
 /**
  * This example demonstrates recursive parsing of nested parentheses.
